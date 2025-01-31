@@ -8,12 +8,28 @@ A decentralized scheduling application that helps teams sync their availability 
 - Meeting scheduling
 - Conflict detection
 - Event RSVP functionality
+- Recurring meetings support
+- Meeting notifications
 
 ## Contract Functions
 The smart contract provides the following functionality:
 - Add/remove team members
 - Set availability windows
 - Create project deadlines
-- Schedule meetings
+- Schedule meetings (one-time or recurring)
+- Set meeting notifications
 - RSVP to events
 - Check schedule conflicts
+
+### Recurring Meetings
+Meetings can now be scheduled with recurrence patterns:
+- Frequency options: daily, weekly, monthly
+- Custom intervals
+- End date specification
+- Notification reminders
+
+### Meeting Notifications
+Configure multiple notification reminders for meetings:
+- Up to 5 notification times per meeting
+- Timestamps relative to meeting start time
+- Supports both one-time and recurring meetings
