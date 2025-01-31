@@ -6,6 +6,7 @@
 (define-constant err-not-found (err u101))
 (define-constant err-unauthorized (err u102))
 (define-constant err-conflict (err u103))
+(define-constant err-invalid-recurrence (err u104))
 
 ;; Data structures
 (define-map team-members principal bool)
@@ -24,7 +25,13 @@
     start-time: uint,
     end-time: uint,
     organizer: principal,
-    required-members: (list 10 principal)
+    required-members: (list 10 principal),
+    recurrence: (optional {
+      frequency: (string-ascii 16),
+      interval: uint,
+      end-date: uint
+    }),
+    notifications: (list 5 uint)
   }
 )
 (define-map rsvps
@@ -59,7 +66,7 @@
   )
 )
 
-;; Project management
+;; Project management 
 (define-public (create-project (name (string-ascii 64)) (deadline uint))
   (let
     (
@@ -75,8 +82,19 @@
   )
 )
 
-;; Meeting management
-(define-public (schedule-meeting (title (string-ascii 64)) (start-time uint) (end-time uint) (required-members (list 10 principal)))
+;; Meeting management with recurrence and notifications
+(define-public (schedule-meeting 
+  (title (string-ascii 64)) 
+  (start-time uint) 
+  (end-time uint) 
+  (required-members (list 10 principal))
+  (recurrence (optional {
+    frequency: (string-ascii 16),
+    interval: uint,
+    end-date: uint
+  }))
+  (notifications (list 5 uint))
+)
   (let
     (
       (new-id (+ (var-get meeting-id-nonce) u1))
@@ -90,7 +108,9 @@
             start-time: start-time,
             end-time: end-time,
             organizer: tx-sender,
-            required-members: required-members
+            required-members: required-members,
+            recurrence: recurrence,
+            notifications: notifications
           }
         ))
       )
@@ -122,4 +142,18 @@
 
 (define-read-only (get-rsvp-status (meeting-id uint) (member principal))
   (map-get? rsvps { meeting-id: meeting-id, member: member })
+)
+
+;; New helper functions for recurring meetings
+(define-read-only (get-next-occurrence (meeting-id uint))
+  (let ((meeting (unwrap! (get-meeting-details meeting-id) none)))
+    (match (get recurrence meeting)
+      recur (some {
+        start: (get start-time meeting),
+        frequency: (get frequency recur),
+        interval: (get interval recur)
+      })
+      none
+    )
+  )
 )

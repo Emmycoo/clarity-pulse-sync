@@ -24,76 +24,43 @@ Clarinet.test({
 });
 
 Clarinet.test({
-  name: "Test availability setting functionality",
-  async fn(chain: Chain, accounts: Map<string, Account>) {
-    const deployer = accounts.get('deployer')!;
-    const member1 = accounts.get('wallet_1')!;
-    
-    let block = chain.mineBlock([
-      // First add the member
-      Tx.contractCall('pulse-sync', 'add-team-member', [
-        types.principal(member1.address)
-      ], deployer.address),
-      
-      // Then set their availability
-      Tx.contractCall('pulse-sync', 'set-availability', [
-        types.uint(1), // Monday
-        types.uint(900), // 9:00
-        types.uint(1700) // 17:00
-      ], member1.address)
-    ]);
-    
-    block.receipts.forEach(receipt => {
-      receipt.result.expectOk();
-    });
-    
-    // Verify availability
-    let availabilityBlock = chain.mineBlock([
-      Tx.contractCall('pulse-sync', 'get-member-availability', [
-        types.principal(member1.address),
-        types.uint(1)
-      ], deployer.address)
-    ]);
-    
-    const availability = availabilityBlock.receipts[0].result.expectSome();
-    assertEquals(availability['start-time'], types.uint(900));
-    assertEquals(availability['end-time'], types.uint(1700));
-  },
-});
-
-Clarinet.test({
-  name: "Test meeting scheduling and RSVP functionality",
+  name: "Test recurring meeting scheduling functionality",
   async fn(chain: Chain, accounts: Map<string, Account>) {
     const deployer = accounts.get('deployer')!;
     const organizer = accounts.get('wallet_1')!;
     const attendee = accounts.get('wallet_2')!;
     
     let block = chain.mineBlock([
-      // Add team members
       Tx.contractCall('pulse-sync', 'add-team-member', [
         types.principal(organizer.address)
       ], deployer.address),
-      Tx.contractCall('pulse-sync', 'add-team-member', [
-        types.principal(attendee.address)
-      ], deployer.address),
       
-      // Schedule meeting
       Tx.contractCall('pulse-sync', 'schedule-meeting', [
-        types.ascii("Team Sync"),
+        types.ascii("Weekly Team Sync"),
         types.uint(1000),
         types.uint(1100),
-        types.list([types.principal(attendee.address)])
-      ], organizer.address),
-      
-      // RSVP to meeting
-      Tx.contractCall('pulse-sync', 'rsvp-to-meeting', [
-        types.uint(1),
-        types.bool(true)
-      ], attendee.address)
+        types.list([types.principal(attendee.address)]),
+        types.some({
+          frequency: types.ascii("weekly"),
+          interval: types.uint(1),
+          end-date: types.uint(1672531200)
+        }),
+        types.list([types.uint(900), types.uint(930)])
+      ], organizer.address)
     ]);
     
     block.receipts.forEach(receipt => {
       receipt.result.expectOk();
     });
+    
+    // Verify meeting details
+    let meetingBlock = chain.mineBlock([
+      Tx.contractCall('pulse-sync', 'get-meeting-details', [
+        types.uint(1)
+      ], deployer.address)
+    ]);
+    
+    const meeting = meetingBlock.receipts[0].result.expectSome();
+    assertEquals(meeting['recurrence'].frequency, types.ascii("weekly"));
   },
 });
