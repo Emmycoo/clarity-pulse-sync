@@ -24,7 +24,7 @@ Clarinet.test({
 });
 
 Clarinet.test({
-  name: "Test recurring meeting scheduling functionality",
+  name: "Test recurring meeting scheduling functionality with time validation",
   async fn(chain: Chain, accounts: Map<string, Account>) {
     const deployer = accounts.get('deployer')!;
     const organizer = accounts.get('wallet_1')!;
@@ -35,6 +35,7 @@ Clarinet.test({
         types.principal(organizer.address)
       ], deployer.address),
       
+      // Test valid meeting time
       Tx.contractCall('pulse-sync', 'schedule-meeting', [
         types.ascii("Weekly Team Sync"),
         types.uint(1000),
@@ -43,15 +44,25 @@ Clarinet.test({
         types.some({
           frequency: types.ascii("weekly"),
           interval: types.uint(1),
-          end-date: types.uint(1672531200)
+          "end-date": types.uint(1672531200)
         }),
         types.list([types.uint(900), types.uint(930)])
+      ], organizer.address),
+
+      // Test invalid meeting time
+      Tx.contractCall('pulse-sync', 'schedule-meeting', [
+        types.ascii("Invalid Meeting"),
+        types.uint(1100),
+        types.uint(1000),
+        types.list([types.principal(attendee.address)]),
+        types.none(),
+        types.list([types.uint(900)])
       ], organizer.address)
     ]);
     
-    block.receipts.forEach(receipt => {
-      receipt.result.expectOk();
-    });
+    block.receipts[0].result.expectOk();
+    block.receipts[1].result.expectOk();
+    block.receipts[2].result.expectErr(105); // err-invalid-time
     
     // Verify meeting details
     let meetingBlock = chain.mineBlock([
