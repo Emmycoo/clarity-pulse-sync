@@ -7,6 +7,7 @@
 (define-constant err-unauthorized (err u102))
 (define-constant err-conflict (err u103))
 (define-constant err-invalid-recurrence (err u104))
+(define-constant err-invalid-time (err u105))
 
 ;; Data structures
 (define-map team-members principal bool)
@@ -43,7 +44,15 @@
 (define-data-var project-id-nonce uint u0)
 (define-data-var meeting-id-nonce uint u0)
 
-;; Team member management
+;; Helper functions
+(define-private (validate-time (start-time uint) (end-time uint))
+  (if (> end-time start-time)
+    (ok true)
+    err-invalid-time
+  )
+)
+
+;; Team member management 
 (define-public (add-team-member (member principal))
   (if (is-eq tx-sender contract-owner)
     (ok (map-set team-members member true))
@@ -60,9 +69,12 @@
 
 ;; Availability management
 (define-public (set-availability (day uint) (start-time uint) (end-time uint))
-  (if (default-to false (map-get? team-members tx-sender))
-    (ok (map-set availability { member: tx-sender, day: day } { start-time: start-time, end-time: end-time }))
-    err-unauthorized
+  (begin
+    (try! (validate-time start-time end-time))
+    (if (default-to false (map-get? team-members tx-sender))
+      (ok (map-set availability { member: tx-sender, day: day } { start-time: start-time, end-time: end-time }))
+      err-unauthorized
+    )
   )
 )
 
@@ -95,26 +107,29 @@
   }))
   (notifications (list 5 uint))
 )
-  (let
-    (
-      (new-id (+ (var-get meeting-id-nonce) u1))
-    )
-    (if (default-to false (map-get? team-members tx-sender))
-      (begin
-        (var-set meeting-id-nonce new-id)
-        (ok (map-set meetings { id: new-id } 
-          { 
-            title: title,
-            start-time: start-time,
-            end-time: end-time,
-            organizer: tx-sender,
-            required-members: required-members,
-            recurrence: recurrence,
-            notifications: notifications
-          }
-        ))
+  (begin
+    (try! (validate-time start-time end-time))
+    (let
+      (
+        (new-id (+ (var-get meeting-id-nonce) u1))
       )
-      err-unauthorized
+      (if (default-to false (map-get? team-members tx-sender))
+        (begin
+          (var-set meeting-id-nonce new-id)
+          (ok (map-set meetings { id: new-id } 
+            { 
+              title: title,
+              start-time: start-time,
+              end-time: end-time,
+              organizer: tx-sender,
+              required-members: required-members,
+              recurrence: recurrence,
+              notifications: notifications
+            }
+          ))
+        )
+        err-unauthorized
+      )
     )
   )
 )
@@ -144,7 +159,7 @@
   (map-get? rsvps { meeting-id: meeting-id, member: member })
 )
 
-;; New helper functions for recurring meetings
+;; Helper functions for recurring meetings
 (define-read-only (get-next-occurrence (meeting-id uint))
   (let ((meeting (unwrap! (get-meeting-details meeting-id) none)))
     (match (get recurrence meeting)
