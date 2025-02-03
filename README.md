@@ -5,7 +5,7 @@ A decentralized scheduling application that helps teams sync their availability 
 ## Features
 - Team member availability tracking
 - Project deadline management
-- Meeting scheduling
+- Meeting scheduling with time validation
 - Conflict detection
 - Event RSVP functionality
 - Recurring meetings support
@@ -20,9 +20,16 @@ The smart contract provides the following functionality:
 - Set meeting notifications
 - RSVP to events
 - Check schedule conflicts
+- Validate meeting time slots
+
+### Time Validation
+The contract now includes time validation to ensure:
+- End time must be later than start time
+- Applied to both meetings and availability settings
+- Prevents invalid time slot entries
 
 ### Recurring Meetings
-Meetings can now be scheduled with recurrence patterns:
+Meetings can be scheduled with recurrence patterns:
 - Frequency options: daily, weekly, monthly
 - Custom intervals
 - End date specification
