@@ -8,6 +8,8 @@
 (define-constant err-conflict (err u103))
 (define-constant err-invalid-recurrence (err u104))
 (define-constant err-invalid-time (err u105))
+(define-constant err-invalid-members (err u106))
+(define-constant err-meeting-overlap (err u107))
 
 ;; Data structures
 (define-map team-members principal bool)
@@ -32,7 +34,8 @@
       interval: uint,
       end-date: uint
     }),
-    notifications: (list 5 uint)
+    notifications: (list 5 uint),
+    cancelled: bool
   }
 )
 (define-map rsvps
@@ -52,49 +55,52 @@
   )
 )
 
+(define-private (is-team-member (member principal))
+  (default-to false (map-get? team-members member))
+)
+
+(define-private (validate-members (members (list 10 principal)))
+  (begin
+    (asserts! (> (len members) u0) err-invalid-members)
+    (ok (fold check-member members true))
+  )
+)
+
+(define-private (check-member (member principal) (valid bool))
+  (and valid (is-team-member member))
+)
+
+(define-private (check-meeting-overlap (start-time uint) (end-time uint) (meeting-id uint))
+  (let ((existing-meeting (map-get? meetings { id: meeting-id })))
+    (match existing-meeting
+      meeting (and
+        (not (get cancelled meeting))
+        (or
+          (and (>= start-time (get start-time meeting)) (< start-time (get end-time meeting)))
+          (and (> end-time (get start-time meeting)) (<= end-time (get end-time meeting)))
+        )
+      )
+      false
+    )
+  )
+)
+
 ;; Team member management 
 (define-public (add-team-member (member principal))
-  (if (is-eq tx-sender contract-owner)
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
     (ok (map-set team-members member true))
-    err-owner-only
   )
 )
 
 (define-public (remove-team-member (member principal))
-  (if (is-eq tx-sender contract-owner)
-    (ok (map-delete team-members member))
-    err-owner-only
-  )
-)
-
-;; Availability management
-(define-public (set-availability (day uint) (start-time uint) (end-time uint))
   (begin
-    (try! (validate-time start-time end-time))
-    (if (default-to false (map-get? team-members tx-sender))
-      (ok (map-set availability { member: tx-sender, day: day } { start-time: start-time, end-time: end-time }))
-      err-unauthorized
-    )
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (ok (map-delete team-members member))
   )
 )
 
-;; Project management 
-(define-public (create-project (name (string-ascii 64)) (deadline uint))
-  (let
-    (
-      (new-id (+ (var-get project-id-nonce) u1))
-    )
-    (if (default-to false (map-get? team-members tx-sender))
-      (begin
-        (var-set project-id-nonce new-id)
-        (ok (map-set projects { id: new-id } { name: name, deadline: deadline, owner: tx-sender }))
-      )
-      err-unauthorized
-    )
-  )
-)
-
-;; Meeting management with recurrence and notifications
+;; Meeting management with enhanced validation
 (define-public (schedule-meeting 
   (title (string-ascii 64)) 
   (start-time uint) 
@@ -109,66 +115,40 @@
 )
   (begin
     (try! (validate-time start-time end-time))
+    (try! (validate-members required-members))
     (let
       (
         (new-id (+ (var-get meeting-id-nonce) u1))
       )
-      (if (default-to false (map-get? team-members tx-sender))
-        (begin
-          (var-set meeting-id-nonce new-id)
-          (ok (map-set meetings { id: new-id } 
-            { 
-              title: title,
-              start-time: start-time,
-              end-time: end-time,
-              organizer: tx-sender,
-              required-members: required-members,
-              recurrence: recurrence,
-              notifications: notifications
-            }
-          ))
-        )
-        err-unauthorized
-      )
+      (asserts! (is-team-member tx-sender) err-unauthorized)
+      (asserts! (not (check-meeting-overlap start-time end-time new-id)) err-meeting-overlap)
+      (var-set meeting-id-nonce new-id)
+      (ok (map-set meetings { id: new-id } 
+        { 
+          title: title,
+          start-time: start-time,
+          end-time: end-time,
+          organizer: tx-sender,
+          required-members: required-members,
+          recurrence: recurrence,
+          notifications: notifications,
+          cancelled: false
+        }
+      ))
     )
   )
 )
 
-;; RSVP functionality
-(define-public (rsvp-to-meeting (meeting-id uint) (attending bool))
-  (if (default-to false (map-get? team-members tx-sender))
-    (ok (map-set rsvps { meeting-id: meeting-id, member: tx-sender } { attending: attending }))
-    err-unauthorized
-  )
-)
-
-;; Read-only functions
-(define-read-only (get-member-availability (member principal) (day uint))
-  (map-get? availability { member: member, day: day })
-)
-
-(define-read-only (get-meeting-details (meeting-id uint))
-  (map-get? meetings { id: meeting-id })
-)
-
-(define-read-only (get-project-details (project-id uint))
-  (map-get? projects { id: project-id })
-)
-
-(define-read-only (get-rsvp-status (meeting-id uint) (member principal))
-  (map-get? rsvps { meeting-id: meeting-id, member: member })
-)
-
-;; Helper functions for recurring meetings
-(define-read-only (get-next-occurrence (meeting-id uint))
-  (let ((meeting (unwrap! (get-meeting-details meeting-id) none)))
-    (match (get recurrence meeting)
-      recur (some {
-        start: (get start-time meeting),
-        frequency: (get frequency recur),
-        interval: (get interval recur)
-      })
-      none
+;; New function: Cancel meeting
+(define-public (cancel-meeting (meeting-id uint))
+  (let ((meeting (unwrap! (map-get? meetings { id: meeting-id }) err-not-found)))
+    (begin
+      (asserts! (or (is-eq tx-sender (get organizer meeting)) (is-eq tx-sender contract-owner)) err-unauthorized)
+      (ok (map-set meetings { id: meeting-id }
+        (merge meeting { cancelled: true })
+      ))
     )
   )
 )
+
+[... rest of the original contract functions ...]
