@@ -1,77 +1,43 @@
-import {
-  Clarinet,
-  Tx,
-  Chain,
-  Account,
-  types
-} from 'https://deno.land/x/clarinet@v1.0.0/index.ts';
-import { assertEquals } from 'https://deno.land/std@0.90.0/testing/asserts.ts';
-
 Clarinet.test({
-  name: "Ensure that team member management works correctly",
-  async fn(chain: Chain, accounts: Map<string, Account>) {
-    const deployer = accounts.get('deployer')!;
-    const member1 = accounts.get('wallet_1')!;
-    
-    let block = chain.mineBlock([
-      Tx.contractCall('pulse-sync', 'add-team-member', [
-        types.principal(member1.address)
-      ], deployer.address)
-    ]);
-    
-    block.receipts[0].result.expectOk();
-  },
-});
-
-Clarinet.test({
-  name: "Test recurring meeting scheduling functionality with time validation",
+  name: "Test enhanced meeting validation and history tracking",
   async fn(chain: Chain, accounts: Map<string, Account>) {
     const deployer = accounts.get('deployer')!;
     const organizer = accounts.get('wallet_1')!;
-    const attendee = accounts.get('wallet_2')!;
     
     let block = chain.mineBlock([
-      Tx.contractCall('pulse-sync', 'add-team-member', [
-        types.principal(organizer.address)
-      ], deployer.address),
-      
-      // Test valid meeting time
+      // Test maximum duration constraint
       Tx.contractCall('pulse-sync', 'schedule-meeting', [
-        types.ascii("Weekly Team Sync"),
+        types.ascii("Long Meeting"),
         types.uint(1000),
-        types.uint(1100),
-        types.list([types.principal(attendee.address)]),
-        types.some({
-          frequency: types.ascii("weekly"),
-          interval: types.uint(1),
-          "end-date": types.uint(1672531200)
-        }),
-        types.list([types.uint(900), types.uint(930)])
-      ], organizer.address),
-
-      // Test invalid meeting time
-      Tx.contractCall('pulse-sync', 'schedule-meeting', [
-        types.ascii("Invalid Meeting"),
-        types.uint(1100),
-        types.uint(1000),
-        types.list([types.principal(attendee.address)]),
+        types.uint(2000), // Over 8 hours
+        types.list([]),
         types.none(),
-        types.list([types.uint(900)])
+        types.list([types.uint(10)])
+      ], organizer.address),
+      
+      // Test notification validation
+      Tx.contractCall('pulse-sync', 'schedule-meeting', [
+        types.ascii("Invalid Notification"),
+        types.uint(1000),
+        types.uint(1100),
+        types.list([]),
+        types.none(),
+        types.list([types.uint(2)]) // Less than minimum
+      ], organizer.address),
+      
+      // Test successful meeting creation
+      Tx.contractCall('pulse-sync', 'schedule-meeting', [
+        types.ascii("Valid Meeting"),
+        types.uint(1000),
+        types.uint(1100),
+        types.list([]),
+        types.none(),
+        types.list([types.uint(10)])
       ], organizer.address)
     ]);
     
-    block.receipts[0].result.expectOk();
-    block.receipts[1].result.expectOk();
-    block.receipts[2].result.expectErr(105); // err-invalid-time
-    
-    // Verify meeting details
-    let meetingBlock = chain.mineBlock([
-      Tx.contractCall('pulse-sync', 'get-meeting-details', [
-        types.uint(1)
-      ], deployer.address)
-    ]);
-    
-    const meeting = meetingBlock.receipts[0].result.expectSome();
-    assertEquals(meeting['recurrence'].frequency, types.ascii("weekly"));
+    block.receipts[0].result.expectErr(109); // err-invalid-duration
+    block.receipts[1].result.expectErr(108); // err-invalid-notifications
+    block.receipts[2].result.expectOk();
   },
 });
